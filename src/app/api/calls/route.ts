@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchCallsFromHappyRobot } from '@/lib/happyrobot';
 import { MOCK_CALLS, MOCK_CALLS_WITH_LIVE } from '@/lib/mock-data';
+import { getAllRuns } from '@/lib/store';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,26 +9,31 @@ export async function GET() {
   const apiKey = process.env.HAPPYROBOT_API_KEY;
   const useCaseId = process.env.HAPPYROBOT_USE_CASE_ID;
 
-  // No API key → pure demo mode (with fake running call for visual effect)
+  // Runs received via webhook (works in both dev and prod, in real-time)
+  const webhookRuns = getAllRuns();
+
+  // If we have webhook data, always use it merged with demo backdrop
+  if (webhookRuns.length > 0) {
+    const merged = [...webhookRuns, ...MOCK_CALLS];
+    return NextResponse.json({ calls: merged, source: 'live+demo' });
+  }
+
+  // No API key → pure demo mode
   if (!apiKey || !useCaseId) {
     return NextResponse.json({ calls: MOCK_CALLS_WITH_LIVE, source: 'mock' });
   }
 
+  // Try the polling API (works for production workflows)
   try {
     const realCalls = await fetchCallsFromHappyRobot();
-
-    // Merge: real calls first (newest on top) + demo backdrop for historical context.
-    // Demo backdrop excludes running calls — real API provides those.
-    const merged = [...realCalls, ...MOCK_CALLS];
-
-    return NextResponse.json({ calls: merged, source: 'live+demo' });
+    if (realCalls.length > 0) {
+      const merged = [...realCalls, ...MOCK_CALLS];
+      return NextResponse.json({ calls: merged, source: 'live+demo' });
+    }
   } catch (error) {
-    console.error('[HappyRobot] fetch error:', error);
-    // On error fall back to pure demo so the dashboard never appears broken
-    return NextResponse.json({
-      calls: MOCK_CALLS_WITH_LIVE,
-      source: 'mock',
-      error: error instanceof Error ? error.message : 'unknown error',
-    });
+    console.error('[HappyRobot] polling error:', error);
   }
+
+  // Fallback: demo mode (API connected but no runs found yet)
+  return NextResponse.json({ calls: MOCK_CALLS_WITH_LIVE, source: 'mock' });
 }
