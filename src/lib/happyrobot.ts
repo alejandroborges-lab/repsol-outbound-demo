@@ -200,6 +200,35 @@ export function parseRun(run: Record<string, unknown>): ParsedCall {
   };
 }
 
+/**
+ * Fetch a single run by its ID.
+ * Used by the webhook handler to enrich CloudEvents notifications with full call details.
+ */
+export async function fetchRunById(runId: string): Promise<ParsedCall | null> {
+  const apiKey = process.env.HAPPYROBOT_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const url = `${HAPPYROBOT_BASE}/runs/${runId}`;
+    console.log(`[HappyRobot] fetchRunById → ${url}`);
+
+    const res = await fetch(url, { headers: getHeaders(), cache: 'no-store' });
+    console.log(`[HappyRobot] fetchRunById status: ${res.status}`);
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as Record<string, unknown>;
+    console.log('[HappyRobot] fetchRunById keys:', Object.keys(data));
+
+    // Might be wrapped in .run / .data, or returned directly
+    const run = (data.run ?? data.data ?? data) as Record<string, unknown>;
+    const effectiveId = run.id ?? runId;
+    return parseRun({ ...run, id: effectiveId });
+  } catch (e) {
+    console.error('[HappyRobot] fetchRunById error:', e);
+    return null;
+  }
+}
+
 export async function fetchCallsFromHappyRobot(): Promise<ParsedCall[]> {
   const apiKey = process.env.HAPPYROBOT_API_KEY;
   const useCaseId = process.env.HAPPYROBOT_USE_CASE_ID;
