@@ -414,7 +414,7 @@ export default function Dashboard() {
 
   const fetchCalls = useCallback(async () => {
     try {
-      const res = await fetch('/api/calls');
+      const res = await fetch(`/api/calls?t=${Date.now()}`, { cache: 'no-store' });
       const data: { calls: ParsedCall[]; source: 'live' | 'mock' | 'live+demo' } = await res.json();
       setCalls(data.calls);
       setSource(data.source);

@@ -19,19 +19,30 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, unknown>;
 
-    // HappyRobot may send a run object directly, or wrap it
+    // ALWAYS log the full raw payload — critical for debugging HappyRobot format
+    console.log('[webhook] RAW PAYLOAD RECEIVED:', JSON.stringify(body, null, 2).slice(0, 2000));
+    console.log('[webhook] top-level keys:', Object.keys(body));
+
+    // HappyRobot may send a run object directly, or wrap it under .run / .data
     const run = (body.run ?? body.data ?? body) as Record<string, unknown>;
 
+    console.log('[webhook] resolved run keys:', Object.keys(run));
+    console.log('[webhook] run.id:', run.id, '| run.status:', run.status);
+
     if (!run.id) {
-      // Log the payload so we can inspect it in Railway logs
-      console.log('[webhook] received payload without run.id:', JSON.stringify(body).slice(0, 500));
-      return NextResponse.json({ ok: true, note: 'no run.id — logged for inspection' });
+      // No run.id — store the raw payload anyway so we can inspect it via GET /api/webhook
+      console.warn('[webhook] ⚠️ no run.id found — raw payload logged above. Keys available:', Object.keys(run));
+      return NextResponse.json({
+        ok: true,
+        note: 'no run.id — check Railway logs for full payload',
+        keys: Object.keys(run),
+      });
     }
 
     const parsed = parseRun(run);
     upsertRun(parsed);
 
-    console.log(`[webhook] run ${parsed.id} upserted — outcome: ${parsed.outcome}`);
+    console.log(`[webhook] ✅ run ${parsed.id} upserted — outcome: ${parsed.outcome}, tools: ${parsed.toolsCalled.join(',')}`);
     return NextResponse.json({ ok: true, runId: parsed.id, outcome: parsed.outcome });
 
   } catch (err) {
