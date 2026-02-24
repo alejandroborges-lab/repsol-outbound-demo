@@ -2,19 +2,17 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-async function tryUrl(url: string, apiKey: string, orgId?: string) {
-  try {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    };
-    if (orgId) headers['X-Organization-Id'] = orgId;
+const BASE = 'https://platform.happyrobot.ai/api/v2';
 
-    const res = await fetch(url, { headers, cache: 'no-store' });
+async function fetchJson(url: string, apiKey: string) {
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      cache: 'no-store',
+    });
     const text = await res.text();
     let body: unknown;
-    try { body = JSON.parse(text); } catch { body = text.slice(0, 300); }
-
+    try { body = JSON.parse(text); } catch { body = text.slice(0, 400); }
     return { status: res.status, ok: res.ok, body };
   } catch (err) {
     return { status: null, ok: false, body: { error: err instanceof Error ? err.message : String(err) } };
@@ -24,37 +22,57 @@ async function tryUrl(url: string, apiKey: string, orgId?: string) {
 export async function GET() {
   const apiKey = process.env.HAPPYROBOT_API_KEY;
   const useCaseId = process.env.HAPPYROBOT_USE_CASE_ID;
-  const orgId = process.env.HAPPYROBOT_ORG_ID;
 
   const envStatus = {
-    HAPPYROBOT_API_KEY: apiKey ? `✅ set (${apiKey.slice(0, 10)}...)` : '❌ MISSING — get from HappyRobot Settings > API Keys',
-    HAPPYROBOT_USE_CASE_ID: useCaseId ? `✅ ${useCaseId}` : '❌ MISSING — add: 019c722e-f93f-747f-9ddd-a385b067886a',
-    HAPPYROBOT_ORG_ID: orgId ? `✅ ${orgId}` : '⚠️ not set (optional)',
+    HAPPYROBOT_API_KEY: apiKey ? `✅ (${apiKey.slice(0, 10)}...)` : '❌ MISSING',
+    HAPPYROBOT_USE_CASE_ID: useCaseId ? `✅ ${useCaseId}` : '❌ MISSING',
   };
 
   if (!apiKey || !useCaseId) {
-    return NextResponse.json({ envStatus, verdict: '❌ Cannot connect — missing env vars above' });
+    return NextResponse.json({ envStatus, verdict: '❌ Missing credentials' });
   }
 
-  // Try all possible URL formats to find which one works
-  const urlsToTry = [
-    `https://platform.happyrobot.ai/api/v2/runs/?use_case_id=${useCaseId}&page_size=3`,
-    `https://platform.happyrobot.ai/api/v1/runs/?use_case_id=${useCaseId}&page_size=3`,
-    `https://platform.happyrobot.ai/runs/?use_case_id=${useCaseId}&page_size=3`,
+  // Test multiple sort + page combinations to find what returns data
+  const tests: Record<string, unknown> = {};
+
+  const variants = [
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=1`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=1&sort=desc`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=1&sort=asc`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=0`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=0&sort=desc`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=9&sort=desc`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=3&page=9&sort=asc`,
+    `${BASE}/runs/?use_case_id=${useCaseId}&page_size=50`,
   ];
 
-  const results: Record<string, unknown> = {};
-  for (const url of urlsToTry) {
-    results[url] = await tryUrl(url, apiKey, orgId);
+  for (const url of variants) {
+    const key = url.replace(`${BASE}/runs/?use_case_id=${useCaseId}&`, '');
+    tests[key] = await fetchJson(url, apiKey);
   }
 
-  const workingUrl = urlsToTry.find((u) => (results[u] as { ok: boolean }).ok);
+  // Find which variant has data
+  const winner = Object.entries(tests).find(([, v]) => {
+    const r = v as { ok: boolean; body: { data?: unknown[] } };
+    return r.ok && Array.isArray(r.body?.data) && r.body.data.length > 0;
+  });
+
+  // Also fetch detail of first run if we can find one
+  let runDetailSample: unknown = null;
+  if (winner) {
+    const winnerData = (winner[1] as { body: { data: Array<{ id: string }> } }).body.data;
+    if (winnerData.length > 0) {
+      const runId = winnerData[0].id;
+      runDetailSample = await fetchJson(`${BASE}/runs/${runId}`, apiKey);
+    }
+  }
 
   return NextResponse.json({
     envStatus,
-    verdict: workingUrl
-      ? `✅ Working URL: ${workingUrl}`
-      : '❌ None of the URLs returned 200 — check API key and use_case_id',
-    urlTests: results,
+    verdict: winner
+      ? `✅ Data found with params: ${winner[0]}`
+      : '⚠️ API connects but data:[] on all variants — check use_case_id matches your workflow',
+    variants: tests,
+    runDetailSample,
   });
 }

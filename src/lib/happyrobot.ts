@@ -206,26 +206,49 @@ export async function fetchCallsFromHappyRobot(): Promise<ParsedCall[]> {
 
   if (!apiKey || !useCaseId) throw new Error('Missing HappyRobot credentials');
 
-  const listRes = await fetch(
+  // Try multiple sort/page combos — the API sometimes returns data:[] on page=1
+  // with the default sort. We try the most likely working variants in order.
+  const candidates = [
     `${HAPPYROBOT_BASE}/runs/?use_case_id=${useCaseId}&page_size=50&sort=desc`,
-    { headers: getHeaders(), cache: 'no-store' },
-  );
+    `${HAPPYROBOT_BASE}/runs/?use_case_id=${useCaseId}&page_size=50&sort=asc`,
+    `${HAPPYROBOT_BASE}/runs/?use_case_id=${useCaseId}&page_size=50`,
+  ];
 
-  if (!listRes.ok) {
-    throw new Error(`HappyRobot API ${listRes.status}: ${await listRes.text()}`);
+  let runs: Array<Record<string, unknown>> = [];
+  let totalPages = 1;
+
+  for (const url of candidates) {
+    const res = await fetch(url, { headers: getHeaders(), cache: 'no-store' });
+    if (!res.ok) throw new Error(`HappyRobot API ${res.status}: ${await res.text()}`);
+
+    const data = (await res.json()) as Record<string, unknown>;
+    const pagination = data.pagination as Record<string, number> | undefined;
+    totalPages = pagination?.totalPages ?? 1;
+    const page = (data.data || data.runs || (Array.isArray(data) ? data : [])) as Array<Record<string, unknown>>;
+
+    if (page.length > 0) {
+      runs = page;
+      break;
+    }
+
+    // If page 1 was empty but there are more pages, fetch the LAST page
+    if (page.length === 0 && totalPages > 1) {
+      const lastUrl = `${url}&page=${totalPages}`;
+      const lastRes = await fetch(lastUrl, { headers: getHeaders(), cache: 'no-store' });
+      if (lastRes.ok) {
+        const lastData = (await lastRes.json()) as Record<string, unknown>;
+        const lastPage = (lastData.data || lastData.runs || []) as Array<Record<string, unknown>>;
+        if (lastPage.length > 0) { runs = lastPage; break; }
+      }
+    }
   }
-
-  const listData = (await listRes.json()) as Record<string, unknown>;
-  const runs = (listData.data ||
-    listData.runs ||
-    (Array.isArray(listData) ? listData : [])) as Array<Record<string, unknown>>;
 
   // If listing already has sessions/events, parse directly (no extra requests needed)
   if (runs.length > 0 && (runs[0].sessions || runs[0].events)) {
     return runs.map(parseRun);
   }
 
-  // Otherwise fetch details for the last 20 calls (parallel)
+  // Otherwise fetch details for each run to get tool calls (parallel, max 20)
   const targetRuns = runs
     .filter((r) => r.status === 'completed' || r.status === 'running')
     .slice(0, 20);
