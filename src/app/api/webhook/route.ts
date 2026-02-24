@@ -23,7 +23,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { parseRun, fetchRunById } from '@/lib/happyrobot';
-import { upsertRun } from '@/lib/store';
+import { upsertRun, popRecentPendingCall } from '@/lib/store';
 import type { ParsedCall } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -87,9 +87,26 @@ export async function POST(req: NextRequest) {
         };
       }
 
+      // Try to enrich with pre-registered contact data (from /api/pre-call)
+      // Only pop on first event (in-progress) so we don't lose it on the completed event
+      if (currentStatus === 'in-progress' && (!call.phone || !call.contactName)) {
+        const pending = popRecentPendingCall(120_000);
+        if (pending) {
+          console.log(`[webhook] ✅ merged pre-call data: ${pending.phone} / ${pending.contactName}`);
+          call = {
+            ...call,
+            phone: pending.phone || call.phone,
+            contactName: pending.contactName || call.contactName,
+            companyName: pending.companyName || call.companyName,
+          };
+        } else {
+          console.log('[webhook] no recent pre-call data found (use /api/pre-call before triggering)');
+        }
+      }
+
       upsertRun(call);
-      console.log(`[webhook] ✅ stored run ${runId} — status: ${currentStatus}, outcome: ${call.outcome}`);
-      return NextResponse.json({ ok: true, runId, status: currentStatus, outcome: call.outcome });
+      console.log(`[webhook] ✅ stored run ${runId} — status: ${currentStatus}, outcome: ${call.outcome}, phone: ${call.phone}`);
+      return NextResponse.json({ ok: true, runId, status: currentStatus, outcome: call.outcome, phone: call.phone });
     }
 
     // ── Legacy / direct run object format (manual tests, etc.) ──
