@@ -1,12 +1,21 @@
 import { ParsedCall, CallOutcome, NegotiationResult } from '@/types';
 
-const HAPPYROBOT_BASE = 'https://platform.happyrobot.ai/api/v2';
+// Docs show the API at root /runs/ (no /api/v2 prefix)
+// See: https://platform.happyrobot.ai/runs/ in official docs
+const HAPPYROBOT_RUNS = 'https://platform.happyrobot.ai/runs';
+const HAPPYROBOT_BASE_V2 = 'https://platform.happyrobot.ai/api/v2'; // kept for fallback
+const HAPPYROBOT_BASE_V1 = 'https://platform.happyrobot.ai/api/v1';
 
 function getHeaders() {
-  return {
+  const headers: Record<string, string> = {
     Authorization: `Bearer ${process.env.HAPPYROBOT_API_KEY}`,
     'Content-Type': 'application/json',
   };
+  // v1 API requires x-organization-id header
+  if (process.env.HAPPYROBOT_ORG_ID) {
+    headers['x-organization-id'] = process.env.HAPPYROBOT_ORG_ID;
+  }
+  return headers;
 }
 
 interface ToolCall {
@@ -209,13 +218,20 @@ export async function fetchRunById(runId: string, sessionId?: string): Promise<P
   const apiKey = process.env.HAPPYROBOT_API_KEY;
   if (!apiKey) return null;
 
-  // ── Try the sessions endpoint (run_id endpoint returns 404 in HappyRobot v2) ──
-  const sessionTarget = sessionId || runId; // try sessionId first, fallback to runId as session
+  // Try every known URL variant (docs, v1, v2)
   const urlsToTry = [
-    `${HAPPYROBOT_BASE}/sessions/${sessionTarget}`,
-    ...(sessionId && sessionId !== runId ? [`${HAPPYROBOT_BASE}/sessions/${runId}`] : []),
-    // Also try v1 if available
-    `https://platform.happyrobot.ai/api/v1/runs/${runId}`,
+    // ① Docs URL (no version prefix) — most likely correct
+    `${HAPPYROBOT_RUNS}/${runId}`,
+    // ② v1 with org_id header (needed per API error message)
+    `${HAPPYROBOT_BASE_V1}/runs/${runId}`,
+    // ③ Sessions endpoint with session_id
+    ...(sessionId ? [
+      `${HAPPYROBOT_RUNS}/${sessionId}`,
+      `${HAPPYROBOT_BASE_V2}/sessions/${sessionId}`,
+      `${HAPPYROBOT_BASE_V1}/sessions/${sessionId}`,
+    ] : []),
+    // ④ v2 (known 404, kept as last resort)
+    `${HAPPYROBOT_BASE_V2}/runs/${runId}`,
   ];
 
   for (const url of urlsToTry) {
@@ -253,12 +269,13 @@ export async function fetchCallsFromHappyRobot(): Promise<ParsedCall[]> {
 
   if (!apiKey || !useCaseId) throw new Error('Missing HappyRobot credentials');
 
-  // Try multiple sort/page combos — the API sometimes returns data:[] on page=1
-  // with the default sort. We try the most likely working variants in order.
+  // Try the docs URL first (no /api/v2 prefix), then v2, then v1
   const candidates = [
-    `${HAPPYROBOT_BASE}/runs/?use_case_id=${useCaseId}&page_size=50&sort=desc`,
-    `${HAPPYROBOT_BASE}/runs/?use_case_id=${useCaseId}&page_size=50&sort=asc`,
-    `${HAPPYROBOT_BASE}/runs/?use_case_id=${useCaseId}&page_size=50`,
+    `${HAPPYROBOT_RUNS}/?use_case_id=${useCaseId}&page_size=50&sort=desc`,
+    `${HAPPYROBOT_RUNS}/?use_case_id=${useCaseId}&page_size=50`,
+    `${HAPPYROBOT_BASE_V2}/runs/?use_case_id=${useCaseId}&page_size=50&sort=desc`,
+    `${HAPPYROBOT_BASE_V2}/runs/?use_case_id=${useCaseId}&page_size=50`,
+    `${HAPPYROBOT_BASE_V1}/runs/?use_case_id=${useCaseId}&page_size=50&sort=desc`,
   ];
 
   let runs: Array<Record<string, unknown>> = [];
@@ -303,7 +320,7 @@ export async function fetchCallsFromHappyRobot(): Promise<ParsedCall[]> {
   const detailed = await Promise.all(
     targetRuns.map(async (run) => {
       try {
-        const res = await fetch(`${HAPPYROBOT_BASE}/runs/${run.id}`, {
+        const res = await fetch(`${HAPPYROBOT_RUNS}/${run.id}`, {
           headers: getHeaders(),
           cache: 'no-store',
         });

@@ -15,9 +15,15 @@ export async function GET(req: NextRequest) {
   const apiKey = process.env.HAPPYROBOT_API_KEY;
   if (!apiKey) return NextResponse.json({ error: 'No API key' }, { status: 500 });
 
+  const baseRuns = 'https://platform.happyrobot.ai/runs';  // docs URL (no /api/v2)
   const base = 'https://platform.happyrobot.ai/api/v2';
   const baseV1 = 'https://platform.happyrobot.ai/api/v1';
-  const headers = { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+  const orgId = process.env.HAPPYROBOT_ORG_ID ?? '019b9973-3843-7fff-aaae-48efe3b8db13';
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'x-organization-id': orgId,
+  };
   const results: Record<string, unknown> = {};
 
   // Show webhook store first (includes session IDs stored from CloudEvents)
@@ -56,21 +62,24 @@ export async function GET(req: NextRequest) {
 
   // Try every plausible endpoint
   if (probeRunId) {
-    results.v2_runs_by_id   = await tryUrl(`${base}/runs/${probeRunId}`);
-    results.v1_runs_by_id   = await tryUrl(`${baseV1}/runs/${probeRunId}`);
-    results.v2_sessions_as_run = await tryUrl(`${base}/sessions/${probeRunId}`);
+    results.docs_runs_by_id     = await tryUrl(`${baseRuns}/${probeRunId}`);          // ← docs URL
+    results.v1_runs_by_id       = await tryUrl(`${baseV1}/runs/${probeRunId}`);       // ← v1 + org header
+    results.v2_runs_by_id       = await tryUrl(`${base}/runs/${probeRunId}`);         // ← known 404
+    results.v2_sessions_as_run  = await tryUrl(`${base}/sessions/${probeRunId}`);
   }
 
   if (probeSessionId) {
-    results.v2_sessions_by_id = await tryUrl(`${base}/sessions/${probeSessionId}`);
-    results.v1_sessions_by_id = await tryUrl(`${baseV1}/sessions/${probeSessionId}`);
+    results.docs_sessions_by_id = await tryUrl(`${baseRuns}/${probeSessionId}`);      // ← docs URL
+    results.v2_sessions_by_id   = await tryUrl(`${base}/sessions/${probeSessionId}`);
+    results.v1_sessions_by_id   = await tryUrl(`${baseV1}/sessions/${probeSessionId}`);
   }
 
-  // Also try listing with loose filters
+  // Listing endpoints
   const useCaseId = process.env.HAPPYROBOT_USE_CASE_ID;
   if (useCaseId) {
+    results.docs_listing  = await tryUrl(`${baseRuns}/?use_case_id=${useCaseId}&page_size=5`);  // ← docs URL
+    results.v1_listing    = await tryUrl(`${baseV1}/runs/?use_case_id=${useCaseId}&page_size=5`);
     results.v2_listing_p1 = await tryUrl(`${base}/runs/?use_case_id=${useCaseId}&page_size=5`);
-    results.v2_listing_no_filter = await tryUrl(`${base}/runs/?page_size=5`);
   }
 
   return NextResponse.json(results, { headers: { 'Cache-Control': 'no-store' } });
