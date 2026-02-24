@@ -19,6 +19,7 @@ export interface ParsedCall {
   contactName?: string;
   companyName?: string;
   isDemo?: boolean; // true = mock backdrop data, false/undefined = real HappyRobot call
+  sessionId?: string; // HappyRobot session_id for API enrichment
   status: CallStatus;
   outcome: CallOutcome;
   phaseReached: number;

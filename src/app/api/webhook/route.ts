@@ -50,13 +50,18 @@ export async function POST(req: NextRequest) {
 
       console.log(`[webhook] CloudEvents — type: ${body.type} | run_id: ${runId} | status: ${currentStatus}`);
 
+      // Also grab the session_id — needed for API enrichment (run/{id} is 404, sessions/{id} may work)
+      const sessionId = eventData.session_id as string | undefined;
+      console.log(`[webhook] session_id: ${sessionId}`);
+
       if (!runId) {
         console.warn('[webhook] CloudEvents missing run_id, keys in data:', Object.keys(eventData));
         return NextResponse.json({ ok: true, note: 'CloudEvents with no run_id' });
       }
 
       // Try to enrich with full run details from the API (phone number, tool calls, etc.)
-      let call: ParsedCall | null = await fetchRunById(runId);
+      // Pass sessionId so fetchRunById can try /sessions/{sessionId} as fallback
+      let call: ParsedCall | null = await fetchRunById(runId, sessionId);
 
       if (call) {
         console.log(`[webhook] ✅ API enrichment OK — outcome: ${call.outcome}, phone: ${call.phone}`);
@@ -78,6 +83,7 @@ export async function POST(req: NextRequest) {
           completedAt: currentStatus === 'completed' ? (statusObj?.updated_at ?? undefined) : undefined,
           toolsCalled: [],
           isDemo: false,
+          sessionId,
         };
       }
 

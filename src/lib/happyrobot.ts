@@ -201,36 +201,50 @@ export function parseRun(run: Record<string, unknown>): ParsedCall {
 }
 
 /**
- * Fetch a single run by its ID.
- * Used by the webhook handler to enrich CloudEvents notifications with full call details.
+ * Fetch run details by run_id or session_id.
+ * HappyRobot v2 does NOT support GET /runs/{id} (returns 404).
+ * Falls back to GET /sessions/{sessionId} which may return conversation data.
  */
-export async function fetchRunById(runId: string): Promise<ParsedCall | null> {
+export async function fetchRunById(runId: string, sessionId?: string): Promise<ParsedCall | null> {
   const apiKey = process.env.HAPPYROBOT_API_KEY;
   if (!apiKey) return null;
 
-  try {
-    const url = `${HAPPYROBOT_BASE}/runs/${runId}`;
-    console.log(`[HappyRobot] fetchRunById → ${url}`);
+  // ── Try the sessions endpoint (run_id endpoint returns 404 in HappyRobot v2) ──
+  const sessionTarget = sessionId || runId; // try sessionId first, fallback to runId as session
+  const urlsToTry = [
+    `${HAPPYROBOT_BASE}/sessions/${sessionTarget}`,
+    ...(sessionId && sessionId !== runId ? [`${HAPPYROBOT_BASE}/sessions/${runId}`] : []),
+    // Also try v1 if available
+    `https://platform.happyrobot.ai/api/v1/runs/${runId}`,
+  ];
 
-    const res = await fetch(url, { headers: getHeaders(), cache: 'no-store' });
-    console.log(`[HappyRobot] fetchRunById status: ${res.status}`);
-    if (!res.ok) return null;
+  for (const url of urlsToTry) {
+    try {
+      console.log(`[HappyRobot] fetchRunById trying → ${url}`);
+      const res = await fetch(url, { headers: getHeaders(), cache: 'no-store' });
+      console.log(`[HappyRobot] fetchRunById ${url} → status: ${res.status}`);
+      if (!res.ok) continue;
 
-    const data = (await res.json()) as Record<string, unknown>;
-    console.log('[HappyRobot] fetchRunById full response:', JSON.stringify(data, null, 2).slice(0, 2000));
+      const data = (await res.json()) as Record<string, unknown>;
+      console.log('[HappyRobot] fetchRunById response:', JSON.stringify(data, null, 2).slice(0, 3000));
 
-    // Might be wrapped in .run / .data, or returned directly
-    const run = (data.run ?? data.data ?? data) as Record<string, unknown>;
-    console.log('[HappyRobot] fetchRunById run keys:', Object.keys(run));
-    console.log('[HappyRobot] fetchRunById run.id:', run.id, '| run.status:', run.status);
-    console.log('[HappyRobot] fetchRunById run.metadata:', JSON.stringify(run.metadata ?? run.input_data ?? run.trigger_data ?? 'none'));
+      // Extract run/session from wrapper if needed
+      const run = (data.run ?? data.session ?? data.data ?? data) as Record<string, unknown>;
+      console.log('[HappyRobot] run keys:', Object.keys(run));
+      console.log('[HappyRobot] run.id:', run.id, '| run.status:', run.status);
 
-    const effectiveId = run.id ?? runId;
-    return parseRun({ ...run, id: effectiveId });
-  } catch (e) {
-    console.error('[HappyRobot] fetchRunById error:', e);
-    return null;
+      const effectiveId = run.id ?? runId;
+      const parsed = parseRun({ ...run, id: effectiveId });
+      // Preserve sessionId in result
+      if (sessionId) parsed.sessionId = sessionId;
+      return parsed;
+    } catch (e) {
+      console.error(`[HappyRobot] fetchRunById error on ${url}:`, e);
+    }
   }
+
+  console.warn('[HappyRobot] fetchRunById: all URLs failed for runId:', runId);
+  return null;
 }
 
 export async function fetchCallsFromHappyRobot(): Promise<ParsedCall[]> {
