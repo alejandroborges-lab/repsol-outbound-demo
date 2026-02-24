@@ -3,9 +3,11 @@ import { ParsedCall } from '@/types';
 const now = Date.now();
 const ago = (minutes: number) => new Date(now - minutes * 60 * 1000).toISOString();
 
+// Historical demo backdrop — always shown to give context to the dashboard.
+// When connected to the real API these are merged with live calls (real ones appear on top).
 export const MOCK_CALLS: ParsedCall[] = [
   {
-    id: 'mock-01',
+    id: 'mock-01', isDemo: true,
     phone: '+34 91 234 5678',
     contactName: 'Carlos Jiménez',
     companyName: 'Plastika Solutions S.L.',
@@ -20,7 +22,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     clientPrice: '880',
   },
   {
-    id: 'mock-02',
+    id: 'mock-02', isDemo: true,
     phone: '+34 93 456 7890',
     contactName: 'Ana González',
     companyName: 'Polímeros Ibérica S.A.',
@@ -36,7 +38,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     clientPrice: '720',
   },
   {
-    id: 'mock-03',
+    id: 'mock-03', isDemo: true,
     phone: '+34 96 345 6789',
     contactName: 'Roberto Moreno',
     companyName: 'Quimiplás Valencia S.L.',
@@ -51,7 +53,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     clientPrice: '810',
   },
   {
-    id: 'mock-04',
+    id: 'mock-04', isDemo: true,
     phone: '+34 91 567 8901',
     contactName: 'Pedro Fernández',
     companyName: 'Industrias Marín S.A.',
@@ -67,9 +69,8 @@ export const MOCK_CALLS: ParsedCall[] = [
     callbackNotes: 'Solicita información por email antes de continuar',
   },
   {
-    id: 'mock-05',
+    id: 'mock-05', isDemo: true,
     phone: '+34 94 678 9012',
-    contactName: undefined,
     companyName: 'TecnoPlast Madrid S.L.',
     status: 'completed',
     outcome: 'voicemail',
@@ -80,7 +81,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     toolsCalled: ['report_voicemail'],
   },
   {
-    id: 'mock-06',
+    id: 'mock-06', isDemo: true,
     phone: '+34 93 789 0123',
     contactName: 'María López',
     companyName: 'Eurocomposit Barcelona',
@@ -94,7 +95,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     decisionMakerName: 'Javier Ruiz',
   },
   {
-    id: 'mock-07',
+    id: 'mock-07', isDemo: true,
     phone: '+34 91 890 1234',
     contactName: 'José García',
     companyName: 'Grupo Polimax S.L.',
@@ -108,7 +109,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     closeReason: 'sin_interes',
   },
   {
-    id: 'mock-08',
+    id: 'mock-08', isDemo: true,
     phone: '+34 94 901 2345',
     contactName: 'Carmen Ruiz',
     companyName: 'Plásticos del Norte S.L.',
@@ -123,7 +124,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     clientPrice: '895',
   },
   {
-    id: 'mock-09',
+    id: 'mock-09', isDemo: true,
     phone: '+34 96 012 3456',
     contactName: 'Luis Herrera',
     companyName: 'Composites Levante',
@@ -137,7 +138,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     closeReason: 'sin_consumo_estireno',
   },
   {
-    id: 'mock-10',
+    id: 'mock-10', isDemo: true,
     phone: '+34 91 123 4567',
     contactName: 'Antonio Sánchez',
     companyName: 'Iberquim S.A.',
@@ -153,7 +154,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     callbackNotes: 'Interesado, quiere consultar con dirección',
   },
   {
-    id: 'mock-11',
+    id: 'mock-11', isDemo: true,
     phone: '+34 93 234 5678',
     contactName: 'Elena Navarro',
     companyName: 'Polisol Bilbao S.L.',
@@ -168,9 +169,8 @@ export const MOCK_CALLS: ParsedCall[] = [
     annualConsumption: '500 TM/año',
   },
   {
-    id: 'mock-12',
+    id: 'mock-12', isDemo: true,
     phone: '+34 95 345 6789',
-    contactName: undefined,
     companyName: 'Plastiglas Sevilla',
     status: 'completed',
     outcome: 'voicemail',
@@ -181,7 +181,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     toolsCalled: ['report_voicemail'],
   },
   {
-    id: 'mock-13',
+    id: 'mock-13', isDemo: true,
     phone: '+34 91 456 7890',
     contactName: 'Rosa Jiménez',
     companyName: 'Quitex International',
@@ -195,7 +195,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     decisionMakerName: 'Fernando Castillo',
   },
   {
-    id: 'mock-14',
+    id: 'mock-14', isDemo: true,
     phone: '+34 93 567 8901',
     contactName: 'David Martín',
     companyName: 'Araplás Barcelona',
@@ -210,7 +210,7 @@ export const MOCK_CALLS: ParsedCall[] = [
     clientPrice: '830',
   },
   {
-    id: 'mock-15',
+    id: 'mock-15', isDemo: true,
     phone: '+34 91 678 9012',
     contactName: 'Sofía Pérez',
     companyName: 'Moldeados Castilla S.A.',
@@ -225,8 +225,12 @@ export const MOCK_CALLS: ParsedCall[] = [
     closeReason: 'fuera_de_mercado',
     clientPrice: '745',
   },
+];
+
+// Pure demo mode also shows one fake running call so the dashboard looks active
+export const MOCK_CALLS_WITH_LIVE: ParsedCall[] = [
   {
-    id: 'mock-live',
+    id: 'mock-live', isDemo: true,
     phone: '+34 96 789 0123',
     contactName: 'Miguel Torres',
     companyName: 'Poliform Valencia',
@@ -237,4 +241,5 @@ export const MOCK_CALLS: ParsedCall[] = [
     timestamp: ago(3),
     toolsCalled: [],
   },
+  ...MOCK_CALLS,
 ];

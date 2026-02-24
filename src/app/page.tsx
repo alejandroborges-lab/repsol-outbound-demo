@@ -90,26 +90,17 @@ const CLOSE_REASON_LABEL: Record<string, string> = {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function LiveBadge({ source }: { source: 'live' | 'mock' }) {
+function LiveBadge({ source }: { source: 'live' | 'mock' | 'live+demo' }) {
+  const cfg = {
+    live:       { bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', label: 'En vivo' },
+    'live+demo':{ bg: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500', label: 'En vivo' },
+    mock:       { bg: 'bg-amber-50 text-amber-700 border-amber-200',       dot: 'bg-amber-500',   label: 'Demo' },
+  }[source];
   return (
-    <div className="flex items-center gap-2">
-      <span
-        className={clsx(
-          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
-          source === 'live'
-            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-            : 'bg-amber-50 text-amber-700 border border-amber-200',
-        )}
-      >
-        <span
-          className={clsx(
-            'w-1.5 h-1.5 rounded-full animate-pulse',
-            source === 'live' ? 'bg-emerald-500' : 'bg-amber-500',
-          )}
-        />
-        {source === 'live' ? 'En vivo' : 'Demo'}
-      </span>
-    </div>
+    <span className={clsx('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border', cfg.bg)}>
+      <span className={clsx('w-1.5 h-1.5 rounded-full animate-pulse', cfg.dot)} />
+      {cfg.label}
+    </span>
   );
 }
 
@@ -417,14 +408,14 @@ export default function Dashboard() {
   const [calls, setCalls] = useState<ParsedCall[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [source, setSource] = useState<'live' | 'mock'>('mock');
+  const [source, setSource] = useState<'live' | 'mock' | 'live+demo'>('mock');
   const [selectedCall, setSelectedCall] = useState<ParsedCall | null>(null);
   const [tick, setTick] = useState(0);
 
   const fetchCalls = useCallback(async () => {
     try {
       const res = await fetch('/api/calls');
-      const data: { calls: ParsedCall[]; source: 'live' | 'mock' } = await res.json();
+      const data: { calls: ParsedCall[]; source: 'live' | 'mock' | 'live+demo' } = await res.json();
       setCalls(data.calls);
       setSource(data.source);
       setLastUpdated(new Date());
@@ -630,18 +621,29 @@ export default function Dashboard() {
                           onClick={() => setSelectedCall(call)}
                           className={clsx(
                             'border-b border-slate-50 cursor-pointer transition-colors hover:bg-slate-50/80',
-                            i === 0 && 'animate-fade-in',
+                            i === 0 && !call.isDemo && 'animate-fade-in',
+                            call.isDemo && 'opacity-70',
                           )}
                         >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
-                              {call.outcome === 'in_progress' && (
-                                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+                              {call.outcome === 'in_progress' && !call.isDemo && (
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                              )}
+                              {call.outcome === 'in_progress' && call.isDemo && (
+                                <span className="w-2 h-2 rounded-full bg-blue-300 animate-pulse flex-shrink-0" />
                               )}
                               <div>
-                                <p className="text-sm font-semibold text-slate-800 leading-tight">
-                                  {call.companyName || '—'}
-                                </p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className={clsx('text-sm font-semibold leading-tight', call.isDemo ? 'text-slate-500' : 'text-slate-800')}>
+                                    {call.companyName || '—'}
+                                  </p>
+                                  {call.isDemo && (
+                                    <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-400 leading-none">
+                                      histórico
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-slate-400 leading-tight">
                                   {call.contactName || formatPhone(call.phone)}
                                 </p>
@@ -714,7 +716,14 @@ export default function Dashboard() {
             <div className="text-center pb-4">
               <p className="text-xs text-slate-400">
                 Repsol Materials · Agente Roberto · Prospección Estireno Monómero B2B ·{' '}
-                {source === 'live' ? (
+                {source === 'live+demo' ? (
+                  <>
+                    <span className="text-emerald-500 font-medium">
+                      {calls.filter(c => !c.isDemo).length} llamadas reales
+                    </span>
+                    <span> + {calls.filter(c => c.isDemo).length} histórico demo</span>
+                  </>
+                ) : source === 'live' ? (
                   <span className="text-emerald-500 font-medium">datos en tiempo real</span>
                 ) : (
                   <span className="text-amber-500 font-medium">modo demo — configura HAPPYROBOT_API_KEY para datos reales</span>
