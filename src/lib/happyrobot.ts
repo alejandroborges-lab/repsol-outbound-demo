@@ -217,10 +217,14 @@ export async function fetchRunById(runId: string): Promise<ParsedCall | null> {
     if (!res.ok) return null;
 
     const data = (await res.json()) as Record<string, unknown>;
-    console.log('[HappyRobot] fetchRunById keys:', Object.keys(data));
+    console.log('[HappyRobot] fetchRunById full response:', JSON.stringify(data, null, 2).slice(0, 2000));
 
     // Might be wrapped in .run / .data, or returned directly
     const run = (data.run ?? data.data ?? data) as Record<string, unknown>;
+    console.log('[HappyRobot] fetchRunById run keys:', Object.keys(run));
+    console.log('[HappyRobot] fetchRunById run.id:', run.id, '| run.status:', run.status);
+    console.log('[HappyRobot] fetchRunById run.metadata:', JSON.stringify(run.metadata ?? run.input_data ?? run.trigger_data ?? 'none'));
+
     const effectiveId = run.id ?? runId;
     return parseRun({ ...run, id: effectiveId });
   } catch (e) {
