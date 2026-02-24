@@ -1,11 +1,10 @@
 import { ParsedCall, CallOutcome, NegotiationResult } from '@/types';
 
-const HAPPYROBOT_BASE = 'https://platform.happyrobot.ai/api/v1';
+const HAPPYROBOT_BASE = 'https://platform.happyrobot.ai/api/v2';
 
 function getHeaders() {
   return {
     Authorization: `Bearer ${process.env.HAPPYROBOT_API_KEY}`,
-    'X-Organization-Id': process.env.HAPPYROBOT_ORG_ID || '',
     'Content-Type': 'application/json',
   };
 }
