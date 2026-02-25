@@ -57,6 +57,19 @@ export function getAllRuns(): ParsedCall[] {
   );
 }
 
+/**
+ * Find the most recent real (non-demo) run matching a phone number and merge updates.
+ * Used by /api/call-result to update outcome after a HappyRobot workflow webhook fires.
+ * Returns true if a matching run was found and updated.
+ */
+export function updateRecentRunByPhone(phone: string, updates: Partial<ParsedCall>): boolean {
+  const runs = getAllRuns();
+  const match = runs.find((r) => r.phone === phone && !r.isDemo);
+  if (!match) return false;
+  upsertRun({ ...match, ...updates });
+  return true;
+}
+
 // ── Pending call store ────────────────────────────────────────────────────────
 
 /** Register contact data before triggering a HappyRobot call */
