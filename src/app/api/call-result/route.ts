@@ -2,8 +2,31 @@
  * POST /api/call-result
  *
  * Receives call outcome data from HappyRobot workflow Webhook nodes.
- * Add one Webhook POST node in the workflow after each tool call:
  *
+ * ── RECOMMENDED: ONE webhook at the end of the workflow ──────────────────────
+ *
+ * Add a single Webhook POST node AFTER the "Analyze Call Result" AI node:
+ *
+ *   URL: https://repsol-outbound-demo-production.up.railway.app/api/call-result
+ *   Body (Builder mode):
+ *     phone    → @phone_number
+ *     outcome  → @response.classification
+ *     duration → @duration
+ *
+ * The "Analyze Call Result" node outputs one of these tags to @response.classification:
+ *   escalated_to_commercial        → escalated (phase 6)
+ *   qualified_lead                 → qualified  (phase 4)
+ *   scheduled_callback             → callback   (phase 3)
+ *   decision_maker_contact_provided → decision_maker (phase 2)
+ *   voicemail                      → voicemail  (phase 1)
+ *   closed_no_interest             → closed     (phase 2)
+ *   closed_out_of_market           → closed     (phase 2)
+ *   closed_other                   → closed     (phase 2)
+ *   other                          → closed     (phase 2)
+ *
+ * ── ALTERNATIVE: 7 separate webhooks after each tool ─────────────────────────
+ *
+ * Add one Webhook POST node in the workflow after each tool call:
  *   URL: https://repsol-outbound-demo-production.up.railway.app/api/call-result
  *   Body (Builder mode):
  *     phone              → @phone_number
@@ -12,7 +35,7 @@
  *     negotiation_result → @negotiation_result   (only for price_recorded)
  *     callback_date      → @callback_date        (only for callback)
  *
- * Outcome values accepted:
+ * Outcome values accepted (direct):
  *   escalated, price_recorded, qualified, callback,
  *   decision_maker, voicemail, closed
  *
@@ -32,6 +55,7 @@ import type { CallOutcome, NegotiationResult } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
+// Map from tool names (7-webhook approach)
 const TOOL_TO_OUTCOME: Record<string, CallOutcome> = {
   escalate_to_commercial:          'escalated',
   record_price_expectation:        'price_recorded',
@@ -40,6 +64,19 @@ const TOOL_TO_OUTCOME: Record<string, CallOutcome> = {
   request_decision_maker_contact:  'decision_maker',
   report_voicemail:                'voicemail',
   close_polite:                    'closed',
+};
+
+// Map from "Analyze Call Result" AI node tags (single-webhook approach)
+const AI_TAG_TO_OUTCOME: Record<string, CallOutcome> = {
+  escalated_to_commercial:          'escalated',
+  qualified_lead:                   'qualified',
+  scheduled_callback:               'callback',
+  decision_maker_contact_provided:  'decision_maker',
+  voicemail:                        'voicemail',
+  closed_no_interest:               'closed',
+  closed_out_of_market:             'closed',
+  closed_other:                     'closed',
+  other:                            'closed',
 };
 
 const VALID_OUTCOMES = new Set<CallOutcome>([
@@ -73,13 +110,20 @@ export async function POST(req: NextRequest) {
     // ── Determine outcome ──────────────────────────────────────────────────────
     let outcome: CallOutcome | undefined;
 
-    // Direct outcome field
     const rawOutcome = body.outcome as string | undefined;
+
+    // 1. Direct outcome field (escalated, qualified, etc.)
     if (rawOutcome && VALID_OUTCOMES.has(rawOutcome as CallOutcome)) {
       outcome = rawOutcome as CallOutcome;
     }
 
-    // Fallback: map from tool_called
+    // 2. AI classification tag from "Analyze Call Result" node
+    //    (@response.classification → escalated_to_commercial, qualified_lead, etc.)
+    if (!outcome && rawOutcome && AI_TAG_TO_OUTCOME[rawOutcome]) {
+      outcome = AI_TAG_TO_OUTCOME[rawOutcome];
+    }
+
+    // 3. Fallback: map from tool_called field
     if (!outcome) {
       const toolCalled = body.tool_called as string | undefined;
       if (toolCalled && TOOL_TO_OUTCOME[toolCalled]) {
@@ -103,13 +147,15 @@ export async function POST(req: NextRequest) {
     const callbackNotes    = body.callback_notes    as string | undefined;
     const decisionMakerName = body.decision_maker_name as string | undefined;
     const closeReason      = body.close_reason      as string | undefined;
+    const rawDuration      = body.duration          as string | number | undefined;
+    const duration         = rawDuration !== undefined ? Number(rawDuration) : undefined;
 
     // ── Update the run ────────────────────────────────────────────────────────
     const updates = {
       outcome,
       status: 'completed' as const,
       phaseReached: PHASE_FOR_OUTCOME[outcome],
-      toolsCalled: [Object.keys(TOOL_TO_OUTCOME).find((k) => TOOL_TO_OUTCOME[k] === outcome) ?? outcome],
+      toolsCalled: [rawOutcome ?? outcome],
       ...(clientPrice       !== undefined && { clientPrice }),
       ...(negotiationResult !== undefined && { negotiationResult }),
       ...(callbackDate      !== undefined && { callbackDate }),
@@ -117,15 +163,17 @@ export async function POST(req: NextRequest) {
       ...(callbackNotes     !== undefined && { callbackNotes }),
       ...(decisionMakerName !== undefined && { decisionMakerName }),
       ...(closeReason       !== undefined && { closeReason }),
+      ...(duration          !== undefined && !isNaN(duration) && { duration }),
     };
 
     const matched = updateRecentRunByPhone(phone, updates);
-    console.log(`[call-result] phone=${phone} outcome=${outcome} matched=${matched}`);
+    console.log(`[call-result] phone=${phone} outcome=${outcome} (raw="${rawOutcome}") matched=${matched}`);
 
     return NextResponse.json({
       ok: true,
       matched,
       outcome,
+      rawOutcome,
       phone,
       note: matched ? 'run updated' : 'no matching run found (use /api/pre-call first)',
     }, { headers: { 'Cache-Control': 'no-store' } });
